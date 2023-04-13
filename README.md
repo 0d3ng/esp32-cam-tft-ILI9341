@@ -1,7 +1,7 @@
 #ESP32 CAM TFT ILI9341 320x240
 
 Please configuration like below in file User_Setup.h
-
+```
 #define ILI9341_DRIVER  
 #define TFT_WIDTH  240 // ST7789 240 x 240 and 240 x 320
 #define TFT_HEIGHT 320 // ST7789 240 x 320
@@ -30,3 +30,4 @@ Please configuration like below in file User_Setup.h
 #define TFT_CS   15
 #define TFT_DC   2
 #define TFT_RST  16
+```
