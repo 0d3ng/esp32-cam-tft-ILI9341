@@ -74,8 +74,13 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define FACE_COLOR_YELLOW (FACE_COLOR_RED | FACE_COLOR_GREEN)
 #define FACE_COLOR_CYAN (FACE_COLOR_BLUE | FACE_COLOR_GREEN)
 #define FACE_COLOR_PURPLE (FACE_COLOR_BLUE | FACE_COLOR_RED)
-
-uint16_t dmaBuffer[16 * 16];
+#define USE_DMA
+#ifdef USE_DMA
+uint16_t dmaBuffer1[16 * 16]; // Toggle buffer for 16*16 MCU block, 512bytes
+uint16_t dmaBuffer2[16 * 16]; // Toggle buffer for 16*16 MCU block, 512bytes
+uint16_t *dmaBufferPtr = dmaBuffer1;
+bool dmaBufferSel = 0;
+#endif
 
 bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
 {
@@ -83,8 +88,21 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
     return 0;
   else
   {
-    tft.pushImage(x, y, w, h, bitmap);
-    // tft.pushImageDMA(x, y, w, h, bitmap, dmaBuffer);
+#ifdef USE_DMA
+    // Double buffering is used, the bitmap is copied to the buffer by pushImageDMA() the
+    // bitmap can then be updated by the jpeg decoder while DMA is in progress
+    if (dmaBufferSel)
+      dmaBufferPtr = dmaBuffer2;
+    else
+      dmaBufferPtr = dmaBuffer1;
+    dmaBufferSel = !dmaBufferSel; // Toggle buffer selection
+    //  pushImageDMA() will clip the image block at screen boundaries before initiating DMA
+    tft.pushImageDMA(x, y, w, h, bitmap, dmaBufferPtr); // Initiate DMA - blocking only if last DMA is not complete
+                                                        // The DMA transfer of image block to the TFT is now in progress...
+#else
+    // Non-DMA blocking alternative
+    tft.pushImage(x, y, w, h, bitmap); // Blocking, so only returns when image block is drawn
+#endif
     return 1;
   }
 }
@@ -176,7 +194,9 @@ void setup()
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.fillScreen(TFT_BLACK);
   tft.setRotation(1);
-  // tft.initDMA();
+#ifdef USE_DMA
+  tft.initDMA(); // To use SPI DMA you must call initDMA() to setup the DMA engine
+#endif
   tft.setSwapBytes(true);
   TJpgDec.setJpgScale(1);
   TJpgDec.setCallback(tft_output);
@@ -257,9 +277,15 @@ void loop()
 
   if (res == ESP_OK)
   {
-    // tft.startWrite();
+#ifdef USE_DMA
+    // Must use startWrite first so TFT chip select stays low during DMA and SPI channel settings remain configured
+    tft.startWrite();
+#endif
     TJpgDec.drawJpg(0, 0, (const uint8_t *)_jpg_buf, _jpg_buf_len);
-    // tft.endWrite();
+#ifdef USE_DMA
+    // Must use endWrite to release the TFT chip select and release the SPI channel
+    tft.endWrite();
+#endif
   }
   if (fb)
   {
